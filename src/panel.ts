@@ -680,7 +680,7 @@ const stamp = (): string => new Date().toISOString().replace(/[-:]/g, "").replac
 
 /** Shows where an export goes: the Downloads folder (as one zip, the default) or the folder the person chose with Change. */
 function showSaveTarget(): void {
-  $("export-folder-name").textContent = exportDir !== undefined ? exportDir.name : hasFolderPicker ? "Downloads (pick a folder once)" : "Downloads (as a zip)";
+  $("export-folder-name").textContent = exportDir === undefined ? "Downloads (as a zip)" : exportDir.name;
   $("export-folder-name").title = $("export-folder-name").textContent ?? "";
   $("reset-export-folder").hidden = exportDir === undefined;
 }
@@ -697,8 +697,8 @@ async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
 async function exportRun(signal: AbortSignal, everything: boolean): Promise<void> {
   const env = needEnvironment();
   // "A folder" is the one chosen before (the picker opens in Downloads the first time); or a zip download.
-  // A folder (the picker opens in Downloads the first time; the choice is remembered), or one zip if asked for or if the page has no picker.
-  const mode = $<HTMLInputElement>("export-as-zip").checked || !hasFolderPicker ? "zip" : "folder";
+  // Downloads (one zip, which keeps the folder layout) unless a folder was chosen with Change.
+  const mode = exportDir === undefined || !hasFolderPicker ? "zip" : "folder";
   const toFolder = mode === "folder";
 
   // The picker needs the click that started this run, so the folder is settled before anything slow.
@@ -905,11 +905,8 @@ async function importSelected(signal: AbortSignal): Promise<void> {
 export function start(shadow: ShadowRoot): { refresh(): void } {
   root = shadow;
   if (!hasFolderPicker) {
-    $<HTMLInputElement>("export-as-zip").checked = true;
-    $<HTMLInputElement>("export-as-zip").disabled = true;
     $<HTMLButtonElement>("pick-export-folder").disabled = true;
     $("pick-export-folder").title = "A folder can be chosen on an https page only";
-    showSaveTarget();
     $("import-pick-mf").textContent = "Select package folder…";
   }
   void recallHandle<FsaDirectoryHandle>("export-folder").then((handle) => {
