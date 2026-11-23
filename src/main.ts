@@ -86,8 +86,24 @@ function attach(doc: Document): void {
   new MutationObserver(scan).observe(doc, { childList: true, subtree: true });
 }
 
+/**
+ * One drawer and one launcher for the whole Aras client. The userscript can start in every window and frame of it (a search grid,
+ * a form or an item that opens in its own window), so only the main window of the client may mount anything.
+ */
+function isMainClientWindow(): boolean {
+  try {
+    if (window.top !== window) return false;
+    const aras = (window as unknown as { aras?: { getMainWindow?: () => Window | undefined } }).aras;
+    const main = aras?.getMainWindow?.();
+    return main === undefined || main === null || main === window;
+  } catch {
+    return false;
+  }
+}
+
 function boot(): void {
-  if (window.__webImportExportAras === true) return;
+  if (!isMainClientWindow()) return;
+  if (document.getElementById(HOST_ID) !== null || window.__webImportExportAras === true) return;
   window.__webImportExportAras = true;
   addLauncher();
   attach(document);

@@ -20,7 +20,12 @@
       <!-- ===================================================================== export -->
       <section id="tab-export">
         <div class="row">
-          <input id="export-filter" type="search" placeholder="Filter packages and items" />
+          <input id="export-filter" type="search" placeholder="Search packages and items" />
+          <select id="export-scope" aria-label="Search in" title="Where to search">
+            <option value="all">All</option>
+            <option value="packages">Packages</option>
+            <option value="items">Items</option>
+          </select>
         </div>
         <div class="row">
           <label class="all" title="Tick or untick every package shown"><input type="checkbox" id="select-all" /> All</label>

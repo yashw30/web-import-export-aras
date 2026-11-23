@@ -380,13 +380,21 @@ let packageNames: string[] = [];
 let exportDir: FsaDirectoryHandle | undefined;
 
 /** The packages the filter lets through (by package name, or by an item the filter finds in a package already opened). */
+type Scope = "all" | "packages" | "items";
+const searchScope = (): Scope => {
+  const value = $<HTMLSelectElement>("export-scope").value;
+  return value === "packages" || value === "items" ? value : "all";
+};
+
 function shownPackages(): string[] {
   const filter = $<HTMLInputElement>("export-filter").value;
   const needle = filter.trim().toLowerCase();
+  const scope = searchScope();
   return packageNames.filter((name) => {
-    if (needle === "" || name.toLowerCase().includes(needle)) return true;
+    if (needle === "") return true;
+    if (scope !== "items" && name.toLowerCase().includes(needle)) return true;
     const elements = contents.get(name);
-    return elements !== undefined && filterElements(elements, filter).length > 0;
+    return scope !== "packages" && elements !== undefined && filterElements(elements, filter).length > 0;
   });
 }
 
@@ -411,7 +419,7 @@ let searchToken = 0;
 async function searchItems(text: string): Promise<void> {
   const token = ++searchToken;
   const needle = text.trim();
-  if (needle.length < 2) return;
+  if (needle.length < 2 || searchScope() === "packages") return;
   const answer = findElementsByName(needle, 300);
   if (answer === null || "error" in answer) return;
   const packages = [...new Set(answer.found.map((hit) => hit.package))].filter((name) => !contents.has(name)).slice(0, 15);
@@ -465,8 +473,9 @@ function renderTree(): void {
 
   for (const name of packageNames) {
     const elements = contents.get(name);
-    const nameMatches = needle === "" || name.toLowerCase().includes(needle);
-    const itemMatches = needle !== "" && elements !== undefined && filterElements(elements, filter).length > 0;
+    const scope = searchScope();
+    const nameMatches = needle === "" || (scope !== "items" && name.toLowerCase().includes(needle));
+    const itemMatches = needle !== "" && scope !== "packages" && elements !== undefined && filterElements(elements, filter).length > 0;
     if (!nameMatches && !itemMatches) continue;
     shown += 1;
 
@@ -503,7 +512,9 @@ function renderTree(): void {
       tree.append(loading.has(name) ? loadingLine("Loading contents…") : make("div", "loading", "Contents not loaded."));
       continue;
     }
-    for (const [type, list] of groupByType(filterElements(elements, filter))) {
+    const matching = needle === "" || scope === "packages" ? elements : filterElements(elements, filter);
+    const listed = matching.length === 0 && nameMatches ? elements : matching;
+    for (const [type, list] of groupByType(listed)) {
       const typeKey = `${name}|${type}`;
       const selectedCount = list.filter((element) => selection.items.has(elementKey(element))).length;
       const typeRow = make("div", "node l1");
@@ -955,14 +966,29 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
     );
   }
 
+  // What was open before a search started comes back when it ends, so a search never leaves packages expanded.
+  let beforeSearch: { packages: Set<string>; types: Set<string> } | undefined;
+  const restoreExpansion = (): void => {
+    if (beforeSearch === undefined) return;
+    expandedPackages.clear();
+    for (const name of beforeSearch.packages) expandedPackages.add(name);
+    expandedTypes.clear();
+    for (const key of beforeSearch.types) expandedTypes.add(key);
+    beforeSearch = undefined;
+  };
   let filterTimer: ReturnType<typeof setTimeout> | undefined;
-  $("export-filter").addEventListener("input", () => {
+  const onSearchChange = (): void => {
     clearTimeout(filterTimer);
+    const text = $<HTMLInputElement>("export-filter").value;
+    if (text.trim() === "") restoreExpansion();
+    else beforeSearch ??= { packages: new Set(expandedPackages), types: new Set(expandedTypes) };
     filterTimer = setTimeout(() => {
       renderTree();
-      void searchItems($<HTMLInputElement>("export-filter").value);
+      void searchItems(text);
     }, 250);
-  });
+  };
+  $("export-filter").addEventListener("input", onSearchChange);
+  $("export-scope").addEventListener("change", onSearchChange);
   $("export-none").addEventListener("click", () => {
     selection.packages.clear();
     selection.items.clear();

@@ -73,3 +73,5 @@ progress[hidden] { display: block; visibility: hidden; }
 
 .saveto .k { color: var(--muted); }
 .saveto #export-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#export-scope { width: auto; flex: none; }
