@@ -7,11 +7,10 @@ Press **Ctrl+Shift+P** anywhere in the Aras client (or click the blue tab on the
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey) in Chrome or Edge.
-2. Build the script: `npm install`, then `npm run build`. This writes `dist/web-import-export-aras.user.js`.
-3. In Tampermonkey: **Create a new script**, paste the whole content of that file, save. (Or open the file from disk while "Allow access to file URLs" is on for Tampermonkey, and press Install.)
-4. Reload your Aras tab and press Ctrl+Shift+P.
+2. In Tampermonkey: **Create a new script** and paste `scripts/web-import-export-aras.user.js` (a few lines). It fetches the tool from this repo (`output/compiled.js`) whenever an Aras page opens, so later updates need no reinstall.
+3. Reload your Aras tab and press Ctrl+Shift+P.
 
-The script is a small loader: on any page that is not an Aras client it does nothing else. It does not change the Aras session or log off.
+To publish a new version: `npm run build`, then commit and push `output/compiled.js` (GitHub's raw cache can take a few minutes to update). `dist/web-import-export-aras.user.js` is the same tool as one self-contained script, for use without GitHub.
 
 ## What it does
 

@@ -65,6 +65,12 @@ const loader = `
 })();
 `;
 
+// output/compiled.js is the payload alone, committed to the repo: the small loader in scripts/ fetches it from GitHub, so updating
+// the tool is a push and nobody reinstalls anything.
+mkdirSync("output", { recursive: true });
+writeFileSync("output/compiled.js", payload);
+console.log(`built output/compiled.js  (${(Buffer.byteLength(payload) / 1024 / 1024).toFixed(2)} MB)`);
+
 mkdirSync("dist", { recursive: true });
 const file = "dist/web-import-export-aras.user.js";
 writeFileSync(file, header + loader);
