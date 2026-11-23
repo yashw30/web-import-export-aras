@@ -37,10 +37,11 @@
 
         <div class="row saveto">
           <span class="k">Save to:</span>
-          <span id="export-folder-name" class="grow">Downloads (as a zip)</span>
+          <span id="export-folder-name" class="grow">Downloads (pick a folder once)</span>
           <button id="pick-export-folder" type="button">Change…</button>
-          <button id="reset-export-folder" type="button" hidden>Downloads</button>
+          <button id="reset-export-folder" type="button" hidden>Reset</button>
         </div>
+        <label class="inline"><input type="checkbox" id="export-as-zip" /> Save as one zip instead of a folder</label>
         <label class="inline"><input type="checkbox" id="export-referenced" /> Also export the items these refer to</label>
 
         <div class="row">
