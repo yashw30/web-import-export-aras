@@ -32,7 +32,7 @@ import {
   matchManifestCase,
   stripTopFolder,
 } from "./import-prep.js";
-import { type OpenItem, type PageInfo, type TokenResult, findPackagesOf, listPackageContents, listPackages, probeAras, readOpenItem, readToken } from "./page-bridge.js";
+import { type OpenItem, type PageInfo, type TokenResult, findElementsByName, findPackagesOf, listPackageContents, listPackages, probeAras, readOpenItem, readToken } from "./page-bridge.js";
 import { workerUrl } from "./worker-url.js";
 
 /**
@@ -111,8 +111,11 @@ function addErrorCard(text: string): void {
   }
   const explained = explainFailure(text);
   const card = make("div", "card");
-  card.append(make("div", "cause", explained.summary));
-  if (explained.where !== "") card.append(make("div", "where", explained.where));
+  // a value in the message can be huge (a 600-character name): the card shows a clipped line, the details and Copy have it all
+  const clip = (text: string, length: number): string =>
+    text.length > length ? `${text.slice(0, Math.ceil(length / 2))} … ${text.slice(-Math.floor(length / 2))}` : text;
+  card.append(make("div", "cause", clip(explained.summary, 300)));
+  if (explained.where !== "") card.append(make("div", "where", clip(explained.where, 200)));
   if (explained.raw.trim() !== explained.summary) {
     const details = make("details");
     details.append(make("summary", "", "Full message from the server"));
@@ -249,28 +252,50 @@ interface Callbacks {
   onProgress: (event: { phase: string; package: string | undefined; item?: { type: string; name: string }; index?: number; total?: number }) => void;
 }
 
-const callbacks = (signal: AbortSignal): Callbacks => ({
-  signal,
-  onMessage: (message) => {
-    log(`[${message.level}] ${message.text}`);
-    if (isErrorLevel(message.level)) addErrorCard(message.text);
-  },
-  onProgress: (event) => {
-    const bar = r<HTMLProgressElement>("progress");
-    if (event.phase === "package" && event.package !== undefined) setStatus(`${event.package}…`);
-    if (event.phase === "item" && event.index !== undefined && event.total !== undefined) {
-      bar.hidden = false;
-      bar.max = event.total;
-      bar.value = event.index;
-      // one fixed line (clipped by the layout), so the log below does not move
-      setStatus(`${event.package ?? ""} · ${event.index} of ${event.total}`);
-    }
-  },
-});
+const callbacks = (signal: AbortSignal): Callbacks => {
+  // The engine's own item counter does not move in its messages ("Item 1 of 878" every time), so the items are counted here.
+  let currentPackage = "";
+  let done = 0;
+  return {
+    signal,
+    onMessage: (message) => {
+      log(`[${message.level}] ${message.text}`);
+      if (isErrorLevel(message.level)) addErrorCard(message.text);
+      // an export says "Exporting package X"; an import says "****Import   X****"
+      const starting = /^(?:Exporting|Importing) package (.+)$/.exec(message.text) ?? /\*{4}\s*(?:Import|Export)\s+(.+?)\s*\*{4}/.exec(message.text);
+      if (starting?.[1] !== undefined) {
+        currentPackage = starting[1];
+        done = 0;
+        setStatus(`${currentPackage}…`);
+      }
+      const item = /^Item \d+ of (\d+): /.exec(message.text);
+      if (item?.[1] !== undefined) {
+        done += 1;
+        const bar = r<HTMLProgressElement>("progress");
+        bar.hidden = false;
+        bar.max = Number(item[1]);
+        bar.value = done;
+        setStatus(`${currentPackage} · ${done} of ${item[1]}`);
+      }
+    },
+    onProgress: (event) => {
+      if (event.phase === "item" && event.index !== undefined && event.total !== undefined && event.index > 1) {
+        // an engine that does report a moving index: use it
+        const bar = r<HTMLProgressElement>("progress");
+        bar.hidden = false;
+        bar.max = event.total;
+        bar.value = event.index;
+        setStatus(`${event.package ?? currentPackage} · ${event.index} of ${event.total}`);
+        done = event.index;
+      }
+    },
+  };
+};
 
 /** One logged-in session on a new Worker, closed again when the work is done. */
 async function withSession<T>(env: Environment, work: (worker: EngineWorker, session: WorkerSession) => Promise<T>): Promise<T> {
   const worker = createEngineWorker({ worker: workerUrl() });
+  currentWorker = worker;
   try {
     const session = await worker.connect({
       url: env.url,
@@ -285,10 +310,13 @@ async function withSession<T>(env: Environment, work: (worker: EngineWorker, ses
   } finally {
     // Stops the Worker without sending the logoff: the session belongs to the Aras tab, and must stay signed in.
     await worker.dispose({ force: true });
+    if (currentWorker === worker) currentWorker = undefined;
   }
 }
 
 let currentAbort: AbortController | undefined;
+/** The Worker of the run in progress, so Abort can stop it for good when the engine does not stop at once. */
+let currentWorker: EngineWorker | undefined;
 
 const BUSY_BUTTONS = [
   "connect",
@@ -326,7 +354,7 @@ async function run(title: string, work: (signal: AbortSignal) => Promise<void>, 
     setStatus(`${title}: finished.`);
   } catch (error) {
     // an abort that stops a picker or a run is not a failure
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (currentAbort?.signal.aborted === true || (error instanceof DOMException && error.name === "AbortError")) {
       setStatus(`${title}: cancelled.`);
     } else {
       const text = describeFailure(error);
@@ -372,6 +400,32 @@ function updateSummary(): void {
   $("export-summary").hidden = !hasSelection(selection);
   $("export-summary").textContent = hasSelection(selection) ? `Selected: ${describeSelection(selection)}.` : "";
   $<HTMLButtonElement>("export-run").textContent = hasSelection(selection) ? `Export ${describeSelection(selection)}` : "Export selected";
+}
+
+let searchToken = 0;
+
+/**
+ * The filter also finds items inside packages that were never opened: one query names the packages that hold a match, and those
+ * packages' contents are loaded (up to 15) so the tree can show the matching items.
+ */
+async function searchItems(text: string): Promise<void> {
+  const token = ++searchToken;
+  const needle = text.trim();
+  if (needle.length < 2) return;
+  const answer = findElementsByName(needle, 300);
+  if (answer === null || "error" in answer) return;
+  const packages = [...new Set(answer.found.map((hit) => hit.package))].filter((name) => !contents.has(name)).slice(0, 15);
+  if (packages.length === 0) return;
+  $("export-tree").replaceChildren(loadingLine("Searching items…"));
+  for (const name of packages) {
+    if (token !== searchToken) return;
+    try {
+      await loadContents(name);
+    } catch {
+      // that package is skipped; the others still show
+    }
+  }
+  if (token === searchToken) renderTree();
 }
 
 async function loadContents(name: string): Promise<PackageElement[]> {
@@ -673,7 +727,7 @@ async function exportRun(signal: AbortSignal, everything: boolean): Promise<void
     showSummary(result.summary);
     if (result.summary.aborted) {
       log("The export was cancelled; nothing was saved.");
-      return;
+      throw new DOMException("cancelled", "AbortError");
     }
     if (target !== undefined) {
       const tree = new MemoryVfs();
@@ -737,14 +791,12 @@ function planSelectedManifest(label: string): void {
   const list = $("import-list");
   list.replaceChildren();
   for (const name of plan.order) {
-    const entry = plan.packages.find((candidate) => candidate.name === name);
     const row = make("label");
     const box = make("input");
     box.type = "checkbox";
     box.value = name;
     box.checked = true;
     row.append(box, ` ${name}`);
-    if (entry !== undefined) row.append(make("span", "count", `  ${entry.folder}`));
     list.append(row);
   }
   for (const warning of plan.warnings) log(`[warning] ${warning}`);
@@ -843,6 +895,7 @@ async function importSelected(signal: AbortSignal): Promise<void> {
       ...callbacks(signal),
     });
     showSummary(result.summary);
+    if (result.summary.aborted) throw new DOMException("cancelled", "AbortError");
   });
 }
 
@@ -889,6 +942,11 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
     button.addEventListener("click", () => {
       currentAbort?.abort();
       setStatus("Aborting…");
+      // The engine only looks at the signal now and then (a big package can take a minute); after a moment the Worker is stopped.
+      const worker = currentWorker;
+      setTimeout(() => {
+        if (worker !== undefined && currentWorker === worker) void worker.dispose({ force: true });
+      }, 1500);
     });
   }
   for (const which of ["export", "import"] as const) {
@@ -900,7 +958,10 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
   let filterTimer: ReturnType<typeof setTimeout> | undefined;
   $("export-filter").addEventListener("input", () => {
     clearTimeout(filterTimer);
-    filterTimer = setTimeout(renderTree, 150);
+    filterTimer = setTimeout(() => {
+      renderTree();
+      void searchItems($<HTMLInputElement>("export-filter").value);
+    }, 250);
   });
   $("export-none").addEventListener("click", () => {
     selection.packages.clear();

@@ -218,7 +218,10 @@ export function readOpenItem(): OpenItem | null {
   const page: any = window;
   const tabIds: unknown = page.arasTabs?.tabs;
   if (!Array.isArray(tabIds)) return null;
-  for (const tabId of tabIds) {
+  // The frames of all open tabs sit on top of each other, so being on screen proves nothing: the selected tab is the one that counts.
+  const selected: unknown = page.arasTabs?.selectedTab;
+  const candidates: unknown[] = typeof selected === "string" && selected !== "" ? [selected] : tabIds;
+  for (const tabId of candidates) {
     try {
       const frame = document.getElementById(String(tabId)) as HTMLIFrameElement | null;
       if (frame === null || frame.getClientRects().length === 0 || getComputedStyle(frame).visibility === "hidden") continue;
@@ -277,6 +280,58 @@ export function findPackagesOf(itemId: string, itemType: string, itemName: strin
     // a versioned item (a Method, a Form) may be listed under another generation's id: fall back to its type and name
     if (names.length === 0 && itemName !== "") names = lookup({ element_type: itemType, name: itemName });
     return { names };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export interface FoundElement {
+  package: string;
+  type: string;
+  id: string;
+  name: string;
+}
+
+/** Packaged items whose name contains `text` (one query for every package), read through the client's own IOM. */
+export function findElementsByName(text: string, limit: number): { found: FoundElement[] } | { error: string } | null {
+  const aras = (() => {
+    for (const candidate of [window]) {
+      try {
+        const found = (candidate as unknown as { aras?: Aras } | null)?.aras;
+        if (found !== undefined && typeof found.getDatabase === "function") return found;
+      } catch {
+        // not readable
+      }
+    }
+    return undefined;
+  })();
+  if (aras === undefined || typeof aras.newIOMInnovator !== "function") return null;
+  try {
+    const innovator = aras.newIOMInnovator();
+    const query = innovator.newItem("PackageElement", "get");
+    query.setAttribute("select", "element_type,element_id,name,source_id(source_id(name))");
+    query.setAttribute("maxRecords", String(limit));
+    query.setProperty("name", `%${text}%`);
+    query.setPropertyCondition("name", "like");
+    const result = query.apply();
+    if (result.isError()) {
+      const code = typeof result.getErrorCode === "function" ? String(result.getErrorCode()) : "";
+      return code === "0" ? { found: [] } : { error: String(result.getErrorString()) };
+    }
+    const found: Array<{ package: string; type: string; id: string; name: string }> = [];
+    const count = Number(result.getItemCount());
+    for (let index = 0; index < count; index += 1) {
+      const element = result.getItemByIndex(index);
+      let packageName = "";
+      try {
+        packageName = String(element.getPropertyItem("source_id")?.getPropertyItem("source_id")?.getProperty("name") ?? "");
+      } catch {
+        // the package name stays empty
+      }
+      if (packageName === "") continue;
+      found.push({ package: packageName, type: String(element.getProperty("element_type")), id: String(element.getProperty("element_id")), name: String(element.getProperty("name") ?? "") });
+    }
+    return { found };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
