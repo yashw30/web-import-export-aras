@@ -75,3 +75,8 @@ progress[hidden] { display: block; visibility: hidden; }
 .saveto #export-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #export-scope { width: auto; flex: none; }
+
+.head h1 { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head button { height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; flex: none; }
+.head button[hidden] { display: none; }
+.head button.icon { width: 30px; padding: 0; }

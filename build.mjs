@@ -36,7 +36,7 @@ const result = await esbuild.build({
 const payload = result.outputFiles[0].text;
 
 const header = `// ==UserScript==
-// @name         Web-ImportExport Aras
+// @name         Aras - Web Import Export
 // @namespace    web-import-export-aras
 // @version      ${pkg.version}
 // @description  Export and import Aras packages from the Aras page you are signed in to. Ctrl+Shift+P opens it.

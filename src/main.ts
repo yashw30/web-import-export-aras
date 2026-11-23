@@ -24,6 +24,9 @@ function mount(): void {
   shadow.addEventListener("keydown", (event) => {
     if ((event as KeyboardEvent).key === "Escape") close();
   });
+  // Keys typed in the drawer stay in the drawer: the page's own key handlers (Aras, other userscripts) see the drawer as one
+  // element and could swallow Backspace or letters meant for its search box.
+  for (const type of ["keydown", "keypress", "keyup"]) shadow.addEventListener(type, (event) => event.stopPropagation());
 }
 
 function open(): void {
@@ -48,7 +51,7 @@ function addLauncher(): void {
     button { position: fixed; right: 0; top: 45%; z-index: 2147482999; width: 22px; height: 72px; padding: 0; border: 0; border-radius: 6px 0 0 6px;
       background: #1a5fb4; color: #fff; font: 600 11px system-ui, sans-serif; letter-spacing: 1px; writing-mode: vertical-rl; cursor: pointer; opacity: 0.55; }
     button:hover { opacity: 1; }
-  </style><button type="button" title="Web-ImportExport Aras (Ctrl+Shift+P)">IMPORT / EXPORT</button>`;
+  </style><button type="button" title="Aras - Web Import Export (Ctrl+Shift+P)">IMPORT / EXPORT</button>`;
   shadow.querySelector("button")?.addEventListener("click", open);
   document.body.append(launcher);
 }
