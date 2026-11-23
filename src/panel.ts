@@ -300,8 +300,15 @@ const BUSY_BUTTONS = [
   "import-run",
 ];
 
+/**
+ * The folder pickers exist only on a secure page (https, or localhost). An Aras served over plain http (an address like
+ * http://192.168.0.55/...) has none, so there the export is a zip and the import reads a folder through a file input.
+ */
+const hasFolderPicker = typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";
+
 function setBusy(busy: boolean): void {
   for (const id of BUSY_BUTTONS) $<HTMLButtonElement>(id).disabled = busy;
+  if (!hasFolderPicker) $<HTMLButtonElement>("pick-export-folder").disabled = true;
   r("spin").hidden = !busy;
   for (const button of root.querySelectorAll<HTMLButtonElement>(".abort-btn")) button.disabled = !busy;
 }
@@ -618,6 +625,7 @@ function disconnect(): void {
 const stamp = (): string => new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
 
 async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
+  if (!hasFolderPicker) throw new Error("This page is not secure (plain http), so the browser offers no folder picker. Save as a zip instead.");
   const handle = await showDirectoryPicker({ mode: "readwrite", id: "aras-export", startIn: exportDir ?? "downloads" });
   exportDir = handle;
   $("export-folder-name").textContent = handle.name;
@@ -628,7 +636,7 @@ async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
 async function exportRun(signal: AbortSignal, everything: boolean): Promise<void> {
   const env = needEnvironment();
   // "A folder" is the one chosen before (the picker opens in Downloads the first time); or a zip download.
-  const mode = $<HTMLInputElement>("out-zip").checked ? "zip" : "folder";
+  const mode = $<HTMLInputElement>("out-zip").checked || !hasFolderPicker ? "zip" : "folder";
   const toFolder = mode === "folder";
 
   // The picker needs the click that started this run, so the folder is settled before anything slow.
@@ -835,6 +843,13 @@ async function importSelected(signal: AbortSignal): Promise<void> {
 /** Mounts the panel's behaviour on its shadow root. Returns `refresh`, for the shortcut pressed while the panel is open. */
 export function start(shadow: ShadowRoot): { refresh(): void } {
   root = shadow;
+  if (!hasFolderPicker) {
+    $<HTMLInputElement>("out-zip").checked = true;
+    $<HTMLInputElement>("out-folder").disabled = true;
+    $<HTMLButtonElement>("pick-export-folder").disabled = true;
+    $("export-folder-name").textContent = "needs https; saving a zip";
+    $("import-pick-mf").textContent = "Select package folder…";
+  }
   void recallHandle<FsaDirectoryHandle>("export-folder").then((handle) => {
     if (handle !== undefined) {
       exportDir = handle;
@@ -898,7 +913,11 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
     renderTree();
   });
 
-  $("import-pick-mf").addEventListener("click", () => void run("Reading the package", pickManifest));
+  $("import-pick-mf").addEventListener("click", () => {
+    // no file picker for a manifest without https: choose the package folder instead (its .mf is found inside)
+    if (!hasFolderPicker) $("import-folder").click();
+    else void run("Reading the package", pickManifest);
+  });
   $("import-pick-zip").addEventListener("click", (event) => {
     event.preventDefault();
     $("import-file").click();

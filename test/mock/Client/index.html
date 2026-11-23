@@ -36,5 +36,6 @@
   const frame = document.createElement("iframe"); frame.id = "tab1"; frame.style.cssText = "width:300px;height:80px"; document.body.append(frame);
   frame.contentWindow.thisItem = { getID: () => "AAAA0000000000000000000000000002", getType: () => "Method", getProperty: (k) => (k === "name" || k === "keyed_name" ? "sg_checkForWorkHour4aDay" : "") };
 </script>
+<script>if (location.search.includes("nofsa")) { Object.defineProperty(window, "showDirectoryPicker", { value: undefined }); Object.defineProperty(window, "showOpenFilePicker", { value: undefined }); }</script>
 <script src="/dist/web-import-export-aras.user.js"></script>
 </body></html>
