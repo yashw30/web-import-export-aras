@@ -1,0 +1,105 @@
+<div class="drawer"><div class="wrap"><div class="head">
+      <h1>Web-ImportExport Aras</h1>
+      <button id="connect" type="button" class="primary">Connect</button>
+      <button id="disconnect" type="button" hidden>Disconnect</button>
+      <button id="close" type="button" class="icon" title="Close (Esc)" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+    </div>
+    <div id="env-box" class="env" hidden>
+      <div><span class="k">Env:</span> <a id="env-url" target="_blank" rel="noreferrer"></a></div>
+      <div><span class="k">DB:</span> <strong id="env-db"></strong> <span id="env-user" class="hint"></span></div>
+    </div>
+
+    <div id="context" class="ctx" hidden></div>
+
+    <div id="work" hidden>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="export" aria-selected="true">Export</button>
+        <button type="button" role="tab" data-tab="import" aria-selected="false">Import</button>
+      </div>
+
+      <!-- ===================================================================== export -->
+      <section id="tab-export">
+        <div class="row">
+          <input id="export-filter" type="search" placeholder="Filter packages and items" />
+        </div>
+        <div class="row">
+          <label class="all" title="Tick or untick every package shown"><input type="checkbox" id="select-all" /> All</label>
+          <span class="grow"></span>
+          <button id="export-none" type="button" class="icon" title="Clear the selection" aria-label="Clear the selection">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+          </button>
+          <button id="export-reload" type="button" class="icon" title="Read the package list again" aria-label="Reload the package list">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5V5h-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+        </div>
+        <div id="export-tree" class="list tree" aria-label="Packages"></div>
+        <p id="export-summary" class="hint" hidden></p>
+
+        <fieldset>
+          <legend>Save to</legend>
+          <label class="inline"><input type="radio" name="export-out" id="out-folder" checked /> A folder</label>
+          <div class="row indent" id="folder-row">
+            <span id="export-folder-name" class="hint">choose on first export</span>
+            <button id="pick-export-folder" type="button">Change…</button>
+          </div>
+          <label class="inline"><input type="radio" name="export-out" id="out-zip" /> A zip download</label>
+        </fieldset>
+        <label class="inline"><input type="checkbox" id="export-referenced" /> Also export the items these refer to</label>
+
+        <div class="row">
+          <button id="export-run" type="button" class="primary">Export selected</button>
+          <button type="button" class="abort-btn" disabled>Abort</button>
+        </div>
+
+        <div data-r="results" hidden>
+        <div class="row statusrow">
+          <span data-r="spin" class="spinner" hidden></span>
+          <span data-r="status" class="status" role="status"></span>
+        </div>
+        <progress data-r="progress" max="100" value="0" hidden></progress>
+        <div data-r="errors" class="errors" aria-live="polite"></div>
+        <details open>
+          <summary>Log</summary>
+          <pre data-r="log" class="log" aria-label="Log"></pre>
+          <button data-r="log-download" type="button">Download log</button>
+        </details>
+        </div>
+      </section>
+
+      <!-- ===================================================================== import -->
+      <section id="tab-import" hidden>
+        <input id="import-file" type="file" accept=".zip,application/zip" hidden />
+        <input id="import-folder" type="file" webkitdirectory hidden />
+        <div class="row">
+          <button id="import-pick-mf" type="button" class="primary">Select manifest (.mf)…</button>
+        </div>
+        <p class="hint">or a <a href="#" id="import-pick-zip">zip</a> / <a href="#" id="import-pick-folder">folder</a></p>
+        <p id="import-source" class="hint" hidden></p>
+        <select id="import-mf" hidden aria-label="Manifest file"></select>
+
+        <div id="import-box" hidden>
+          <p class="hint">Packages, in import order:</p>
+          <div id="import-list" class="list"></div>
+          <label class="inline"><input type="checkbox" id="import-merge" /> Merge: update items that already exist instead of skipping them</label>
+          <div class="row">
+            <button id="import-run" type="button" class="primary">Import selected packages</button>
+            <button type="button" class="abort-btn" disabled>Abort</button>
+          </div>
+        </div>
+
+        <div data-r="results" hidden>
+        <div class="row statusrow">
+          <span data-r="spin" class="spinner" hidden></span>
+          <span data-r="status" class="status" role="status"></span>
+        </div>
+        <progress data-r="progress" max="100" value="0" hidden></progress>
+        <div data-r="errors" class="errors" aria-live="polite"></div>
+        <details open>
+          <summary>Log</summary>
+          <pre data-r="log" class="log" aria-label="Log"></pre>
+          <button data-r="log-download" type="button">Download log</button>
+        </details>
+        </div>
+      </section>
+    </div>
+</div></div>

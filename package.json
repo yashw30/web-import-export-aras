@@ -1,0 +1,21 @@
+{
+  "name": "web-import-export-aras",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Export and import Aras packages from inside the Aras page, as a userscript (Tampermonkey / Violentmonkey).",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "import-export-libs-js": "github:omkarbhale/import-export-libs-js#b2b2a35331f53f66061e42552c37cb8b11ca1ff8"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

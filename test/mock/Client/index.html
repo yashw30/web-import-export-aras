@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mock Aras</title></head>
+<body style="font-family:sans-serif"><h1>Mock Aras client</h1><p>Stand-in for the Aras page: a fake <code>window.aras</code>. Press Ctrl+Shift+P.</p>
+<script>
+  const packages = ["com.aras.innovator.core", "com.aras.innovator.cui", "steepgraph.IPMS.Project"];
+  const contents = { "com.aras.innovator.core": [["ItemType", "AAAA0000000000000000000000000001", "Part"], ["Method", "AAAA0000000000000000000000000002", "sg_checkForWorkHour4aDay"], ["Method", "AAAA0000000000000000000000000003", "sg_other"]] };
+  const result = (items) => ({ isError: () => items.length === 0, getErrorCode: () => "0", getErrorString: () => "No items", getItemCount: () => items.length, getItemByIndex: (i) => items[i], getRelationships: (t) => ({ getItemCount: () => 0 }) });
+  function item(type) {
+    const state = { props: {}, rels: [] };
+    return { setAttribute() {}, setProperty(k, v) { state.props[k] = v; }, setPropertyCondition() {}, addRelationship(r) { state.rels.push(r); }, state,
+      apply() {
+        if (type === "PackageDefinition") {
+          if (state.rels.length && state.props.name === undefined) {
+            const wanted = state.rels[0].state.rels[0].state.props.element_id;
+            const hit = Object.entries(contents).filter(([, els]) => els.some((e) => e[1] === wanted)).map(([n]) => ({ getProperty: () => n }));
+            return result(hit);
+          }
+          if (state.rels.length) {
+            const name = state.props.name; const els = contents[name] || [];
+            const members = els.map(([t, id, n]) => ({ getProperty: (k) => ({ element_type: t, element_id: id, name: n })[k] }));
+            const group = { getRelationships: () => ({ getItemCount: () => members.length, getItemByIndex: (i) => members[i] }) };
+            return { isError: () => false, getRelationships: () => ({ getItemCount: () => 1, getItemByIndex: () => group }), getItemCount: () => 1 };
+          }
+          return result(packages.map((n) => ({ getProperty: () => n })));
+        }
+        return result([]);
+      } };
+  }
+  window.aras = {
+    getDatabase: () => "MOCK_DB", getServerBaseURL: () => location.origin + "/InnovatorServer/Server/", getServerURL: () => location.origin + "/InnovatorServer/Server/InnovatorServer.aspx", getLoginName: () => "admin",
+    OAuthClient: { getAuthorizationHeader: () => ({ Authorization: "Bearer mock-token" }) },
+    newIOMInnovator: () => ({ newItem: (type) => item(type) }),
+  };
+  // one open, visible tab holding a Method, like Aras 14
+  window.arasTabs = { tabs: ["tab1"] };
+  const frame = document.createElement("iframe"); frame.id = "tab1"; frame.style.cssText = "width:300px;height:80px"; document.body.append(frame);
+  frame.contentWindow.thisItem = { getID: () => "AAAA0000000000000000000000000002", getType: () => "Method", getProperty: (k) => (k === "name" || k === "keyed_name" ? "sg_checkForWorkHour4aDay" : "") };
+</script>
+<script src="/dist/web-import-export-aras.user.js"></script>
+</body></html>
