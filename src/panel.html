@@ -35,15 +35,12 @@
         <div id="export-tree" class="list tree" aria-label="Packages"></div>
         <p id="export-summary" class="hint" hidden></p>
 
-        <fieldset>
-          <legend>Save to</legend>
-          <label class="inline"><input type="radio" name="export-out" id="out-folder" checked /> A folder</label>
-          <div class="row indent" id="folder-row">
-            <span id="export-folder-name" class="hint">choose on first export</span>
-            <button id="pick-export-folder" type="button">Change…</button>
-          </div>
-          <label class="inline"><input type="radio" name="export-out" id="out-zip" /> A zip download</label>
-        </fieldset>
+        <div class="row saveto">
+          <span class="k">Save to:</span>
+          <span id="export-folder-name" class="grow">Downloads (as a zip)</span>
+          <button id="pick-export-folder" type="button">Change…</button>
+          <button id="reset-export-folder" type="button" hidden>Downloads</button>
+        </div>
         <label class="inline"><input type="checkbox" id="export-referenced" /> Also export the items these refer to</label>
 
         <div class="row">

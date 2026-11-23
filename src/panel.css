@@ -70,3 +70,6 @@ progress[hidden] { display: block; visibility: hidden; }
 
 .head { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); margin-bottom: 4px; }
 .head h1 { margin: 0; }
+
+.saveto .k { color: var(--muted); }
+.saveto #export-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

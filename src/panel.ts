@@ -624,11 +624,18 @@ function disconnect(): void {
 
 const stamp = (): string => new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
 
+/** Shows where an export goes: the Downloads folder (as one zip, the default) or the folder the person chose with Change. */
+function showSaveTarget(): void {
+  $("export-folder-name").textContent = exportDir === undefined ? "Downloads (as a zip)" : exportDir.name;
+  $("export-folder-name").title = $("export-folder-name").textContent ?? "";
+  $("reset-export-folder").hidden = exportDir === undefined;
+}
+
 async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
   if (!hasFolderPicker) throw new Error("This page is not secure (plain http), so the browser offers no folder picker. Save as a zip instead.");
   const handle = await showDirectoryPicker({ mode: "readwrite", id: "aras-export", startIn: exportDir ?? "downloads" });
   exportDir = handle;
-  $("export-folder-name").textContent = handle.name;
+  showSaveTarget();
   await rememberHandle("export-folder", handle);
   return handle;
 }
@@ -636,7 +643,8 @@ async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
 async function exportRun(signal: AbortSignal, everything: boolean): Promise<void> {
   const env = needEnvironment();
   // "A folder" is the one chosen before (the picker opens in Downloads the first time); or a zip download.
-  const mode = $<HTMLInputElement>("out-zip").checked || !hasFolderPicker ? "zip" : "folder";
+  // Downloads (one zip, which keeps the folder layout) unless a folder was chosen with Change.
+  const mode = exportDir === undefined || !hasFolderPicker ? "zip" : "folder";
   const toFolder = mode === "folder";
 
   // The picker needs the click that started this run, so the folder is settled before anything slow.
@@ -844,16 +852,14 @@ async function importSelected(signal: AbortSignal): Promise<void> {
 export function start(shadow: ShadowRoot): { refresh(): void } {
   root = shadow;
   if (!hasFolderPicker) {
-    $<HTMLInputElement>("out-zip").checked = true;
-    $<HTMLInputElement>("out-folder").disabled = true;
     $<HTMLButtonElement>("pick-export-folder").disabled = true;
-    $("export-folder-name").textContent = "needs https; saving a zip";
+    $("pick-export-folder").title = "A folder can be chosen on an https page only";
     $("import-pick-mf").textContent = "Select package folder…";
   }
   void recallHandle<FsaDirectoryHandle>("export-folder").then((handle) => {
     if (handle !== undefined) {
       exportDir = handle;
-      $("export-folder-name").textContent = handle.name;
+      showSaveTarget();
     }
   });
   // ------------------------------------------------------------------------------------------------------------- wiring
@@ -902,6 +908,11 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
     renderTree();
   });
   $("export-reload").addEventListener("click", () => void run("Reloading packages", () => readPackageList(needEnvironment()), { clear: false }));
+  $("reset-export-folder").addEventListener("click", () => {
+    exportDir = undefined;
+    showSaveTarget();
+    void rememberHandle("export-folder", undefined);
+  });
   $("pick-export-folder").addEventListener("click", () => void run("Choosing folder", async () => void (await chooseExportFolder()), { clear: false }));
   $("export-run").addEventListener("click", () => void run("Export", (signal) => exportRun(signal, false)));
   $<HTMLInputElement>("select-all").addEventListener("change", (event) => {
