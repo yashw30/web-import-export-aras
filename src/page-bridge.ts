@@ -206,6 +206,10 @@ export interface OpenItem {
   visible: boolean;
   /** How deep the frame is; the deepest visible one is the item being worked on. */
   depth: number;
+  /** The id a package refers to (`config_id`; the same as `id` for an item with one generation). */
+  configId: string;
+  /** A new item that is not saved yet. */
+  isNew: boolean;
 }
 
 /**
@@ -231,7 +235,9 @@ export function readOpenItem(): OpenItem | null {
       const type = item?.getType?.();
       if (typeof id !== "string" || id === "" || typeof type !== "string" || type === "") continue;
       const name = String(item.getProperty?.("keyed_name") || item.getProperty?.("name") || "");
-      return { type, id, name, visible: true, depth: 1 };
+      const configId = String(item.getProperty?.("config_id") || id);
+      const isNew = item.getAttribute?.("isNew") === "1" || item.getAttribute?.("action") === "add";
+      return { type, id, name, visible: true, depth: 1, configId, isNew };
     } catch {
       // another tab
     }
@@ -240,7 +246,7 @@ export function readOpenItem(): OpenItem | null {
 }
 
 /** The packages that hold this item: by its id (`PackageElement.element_id`), else by type and name; read through the client's own IOM. */
-export function findPackagesOf(itemId: string, itemType: string, itemName: string): { names: string[] } | { error: string } | null {
+export function findPackagesOf(itemId: string, itemType: string, itemName: string, configId?: string): { names: string[] } | { error: string } | null {
   const aras = (() => {
     for (const candidate of [window]) {
       try {
@@ -276,7 +282,8 @@ export function findPackagesOf(itemId: string, itemType: string, itemName: strin
       for (let index = 0; index < count; index += 1) names.push(String(result.getItemByIndex(index).getProperty("name")));
       return names;
     };
-    let names = lookup({ element_id: itemId });
+    let names = lookup({ element_id: configId !== undefined && configId !== "" ? configId : itemId });
+    if (names.length === 0 && configId !== undefined && configId !== "" && configId !== itemId) names = lookup({ element_id: itemId });
     // a versioned item (a Method, a Form) may be listed under another generation's id: fall back to its type and name
     if (names.length === 0 && itemName !== "") names = lookup({ element_type: itemType, name: itemName });
     return { names };
@@ -332,6 +339,83 @@ export function findElementsByName(text: string, limit: number): { found: FoundE
       found.push({ package: packageName, type: String(element.getProperty("element_type")), id: String(element.getProperty("element_id")), name: String(element.getProperty("name") ?? "") });
     }
     return { found };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Whether packages hold items of this type at all (a configuration type such as Method or Form, not data such as Part). */
+export function isPackagedType(itemType: string): boolean | null {
+  const aras = (window as unknown as { aras?: Aras }).aras;
+  if (aras === undefined || typeof aras.newIOMInnovator !== "function") return null;
+  try {
+    const query = aras.newIOMInnovator().newItem("PackageElement", "get");
+    query.setAttribute("select", "element_type");
+    query.setAttribute("maxRecords", "1");
+    query.setProperty("element_type", itemType);
+    const result = query.apply();
+    return !result.isError() && Number(result.getItemCount()) > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Adds an item to a package definition the way the Aras client records it: a PackageElement under the package's PackageGroup
+ * for the item's type (the group is made when the package has none for that type). Read and written through the client's own IOM,
+ * so with the signed-in user's rights.
+ */
+export function addItemToPackage(
+  packageName: string,
+  itemType: string,
+  elementId: string,
+  itemName: string,
+): { ok: true; already: boolean } | { error: string } | null {
+  const aras = (window as unknown as { aras?: Aras }).aras;
+  if (aras === undefined || typeof aras.newIOMInnovator !== "function") return null;
+  try {
+    const innovator = aras.newIOMInnovator();
+    const fail = (result: { getErrorString(): string }): { error: string } => ({ error: String(result.getErrorString()) });
+
+    const packageQuery = innovator.newItem("PackageDefinition", "get");
+    packageQuery.setAttribute("select", "id,name");
+    packageQuery.setProperty("name", packageName);
+    const packages = packageQuery.apply();
+    if (packages.isError()) return fail(packages);
+    const packageId = String(packages.getItemByIndex(0).getID());
+
+    const groupQuery = innovator.newItem("PackageGroup", "get");
+    groupQuery.setAttribute("select", "id,name");
+    groupQuery.setProperty("source_id", packageId);
+    groupQuery.setProperty("name", itemType);
+    const groups = groupQuery.apply();
+    let groupId: string;
+    if (!groups.isError() && Number(groups.getItemCount()) > 0) {
+      groupId = String(groups.getItemByIndex(0).getID());
+    } else {
+      const created = innovator.newItem("PackageGroup", "add");
+      created.setProperty("source_id", packageId);
+      created.setProperty("name", itemType);
+      const made = created.apply();
+      if (made.isError()) return fail(made);
+      groupId = String(made.getID());
+    }
+
+    const existing = innovator.newItem("PackageElement", "get");
+    existing.setAttribute("select", "id");
+    existing.setProperty("source_id", groupId);
+    existing.setProperty("element_id", elementId);
+    const there = existing.apply();
+    if (!there.isError() && Number(there.getItemCount()) > 0) return { ok: true, already: true };
+
+    const element = innovator.newItem("PackageElement", "add");
+    element.setProperty("source_id", groupId);
+    element.setProperty("element_type", itemType);
+    element.setProperty("element_id", elementId);
+    element.setProperty("name", itemName);
+    const added = element.apply();
+    if (added.isError()) return fail(added);
+    return { ok: true, already: false };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

@@ -1,3 +1,5 @@
+import { ADD_CSS, addToPackageFlow } from "./add-to-package.js";
+import { type OpenItem, findPackagesOf, isPackagedType, readOpenItem } from "./page-bridge.js";
 import css from "./panel.css";
 import html from "./panel.html";
 import { start } from "./panel.js";
@@ -12,13 +14,14 @@ const HOST_ID = "__web_import_export_aras";
 let host: HTMLElement | undefined;
 let launcher: HTMLElement | undefined;
 let panel: { refresh(): void } | undefined;
+let toast: HTMLElement | undefined;
 
 function mount(): void {
   host = document.createElement("div");
   host.id = HOST_ID;
   document.body.append(host);
   const shadow = host.attachShadow({ mode: "open" });
-  shadow.innerHTML = `<style>${css}</style>${html}`;
+  shadow.innerHTML = `<style>${css}${ADD_CSS}</style>${html}`;
   panel = start(shadow);
   shadow.getElementById("close")?.addEventListener("click", close);
   shadow.addEventListener("keydown", (event) => {
@@ -30,6 +33,7 @@ function mount(): void {
 }
 
 function open(): void {
+  hideToast(); // the shortcut takes over from the suggestion
   if (host === undefined) {
     mount(); // starts connecting by itself
   } else {
@@ -48,12 +52,106 @@ function addLauncher(): void {
   launcher = document.createElement("div");
   const shadow = launcher.attachShadow({ mode: "open" });
   shadow.innerHTML = `<style>
-    button { position: fixed; right: 0; top: 45%; z-index: 2147482999; width: 22px; height: 72px; padding: 0; border: 0; border-radius: 6px 0 0 6px;
+    button.launch { position: fixed; right: 0; top: 45%; z-index: 2147482999; width: 22px; height: 72px; padding: 0; border: 0; border-radius: 6px 0 0 6px;
       background: #1a5fb4; color: #fff; font: 600 11px system-ui, sans-serif; letter-spacing: 1px; writing-mode: vertical-rl; cursor: pointer; opacity: 0.55; }
-    button:hover { opacity: 1; }
-  </style><button type="button" title="Aras - Web Import Export (Ctrl+Shift+P)">IMPORT / EXPORT</button>`;
-  shadow.querySelector("button")?.addEventListener("click", open);
+    button.launch:hover { opacity: 1; }
+    ${ADD_CSS}
+    .toast { position: fixed; right: 34px; bottom: 24px; z-index: 2147482999; width: min(340px, calc(100vw - 48px)); box-sizing: border-box; padding: 10px 12px;
+      font: 13px/1.4 system-ui, sans-serif; color-scheme: light dark; background: Canvas; color: CanvasText; border: 1px solid #1a5fb4; border-radius: 8px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
+    .toast[hidden] { display: none; }
+    .toast .row { display: flex; gap: 8px; margin-top: 8px; }
+    .toast .row button { font: inherit; padding: 5px 12px; border: 1px solid #888; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+    .toast .row button.primary { background: #1a5fb4; border-color: #1a5fb4; color: #fff; }
+    .toast .head { display: flex; gap: 8px; align-items: flex-start; }
+    .toast .head .msg { flex: 1; word-break: break-word; }
+    .toast .head .x { flex: none; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; opacity: 0.7; }
+  </style><div class="toast" hidden></div><button class="launch" type="button" title="Aras - Web Import Export (Ctrl+Shift+P)">IMPORT / EXPORT</button>`;
+  shadow.querySelector("button.launch")?.addEventListener("click", open);
+  toast = shadow.querySelector<HTMLElement>(".toast") ?? undefined;
+  // keys typed in the suggestion stay there (the page's own key handlers could swallow them)
+  for (const type of ["keydown", "keypress", "keyup"]) shadow.addEventListener(type, (event) => event.stopPropagation());
   document.body.append(launcher);
+}
+
+// ------------------------------------------------------------------------------------------- suggestion for a newly opened tab
+
+/** Items whose suggestion was closed or answered: they are not offered again in this page. */
+const answered = new Set<string>();
+
+function hideToast(): void {
+  if (toast !== undefined) toast.hidden = true;
+}
+
+function showSuggestion(item: OpenItem): void {
+  if (toast === undefined) return;
+  const box = toast;
+  const close = (): void => {
+    answered.add(item.id);
+    box.hidden = true;
+  };
+  const head = document.createElement("div");
+  head.className = "head";
+  const message = document.createElement("div");
+  message.className = "msg";
+  message.textContent = `${item.type} "${item.name}" is not in any package. Add it to one?`;
+  const x = document.createElement("button");
+  x.className = "x";
+  x.type = "button";
+  x.title = "Close";
+  x.textContent = "✕";
+  x.addEventListener("click", close);
+  head.append(message, x);
+  const row = document.createElement("div");
+  row.className = "row";
+  const add = document.createElement("button");
+  add.className = "primary";
+  add.type = "button";
+  add.textContent = "Add to package…";
+  const no = document.createElement("button");
+  no.type = "button";
+  no.textContent = "Not now";
+  no.addEventListener("click", close);
+  add.addEventListener("click", () => {
+    const holder = document.createElement("div");
+    box.replaceChildren(holder);
+    addToPackageFlow(holder, item, () => close());
+  });
+  row.append(add, no);
+  box.replaceChildren(head, row);
+  box.hidden = false;
+}
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+let lastTab = "";
+let checking = 0;
+
+/** A tab was selected: if it holds a saved item of a packaged type that no package has, suggest adding it. */
+async function checkOpenTab(token: number): Promise<void> {
+  hideToast();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await wait(900); // a tab's item loads a moment after the tab opens
+    if (token !== checking) return;
+    const item = readOpenItem();
+    if (item === null) continue;
+    if (item.isNew || answered.has(item.id)) return;
+    if (host !== undefined && host.style.display !== "none") return; // the drawer is open: it has its own question
+    const packages = findPackagesOf(item.id, item.type, item.name, item.configId);
+    if (packages === null || "error" in packages || packages.names.length > 0) return;
+    if (isPackagedType(item.type) !== true) return;
+    if (token === checking) showSuggestion(item);
+    return;
+  }
+}
+
+function watchTabs(): void {
+  setInterval(() => {
+    const selected = (window as unknown as { arasTabs?: { selectedTab?: unknown } }).arasTabs?.selectedTab;
+    if (typeof selected !== "string" || selected === lastTab) return;
+    lastTab = selected;
+    checking += 1;
+    void checkOpenTab(checking);
+  }, 1000);
 }
 
 // Ctrl+Shift+P. Keys pressed inside Aras's frames do not reach the top window, so the listener goes on every same-origin frame.
@@ -110,6 +208,7 @@ function boot(): void {
   window.__webImportExportAras = true;
   addLauncher();
   attach(document);
+  watchTabs();
 }
 
 boot();

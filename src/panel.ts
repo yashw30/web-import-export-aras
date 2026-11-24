@@ -32,6 +32,7 @@ import {
   matchManifestCase,
   stripTopFolder,
 } from "./import-prep.js";
+import { addToPackageFlow } from "./add-to-package.js";
 import { type OpenItem, type PageInfo, type TokenResult, findElementsByName, findPackagesOf, listPackageContents, listPackages, probeAras, readOpenItem, readToken } from "./page-bridge.js";
 import { workerUrl } from "./worker-url.js";
 
@@ -614,13 +615,36 @@ async function applyOpenItem(_env: Environment): Promise<void> {
   }
   box.replaceChildren(loadingLine(`Open item: ${item.type} ${item.name}…`));
   box.hidden = false;
-  const found = findPackagesOf(item.id, item.type, item.name);
+  const found = findPackagesOf(item.id, item.type, item.name, item.configId);
   if (found === null || "error" in found) {
     box.textContent = `Open item: ${item.type} "${item.name}". ${found === null ? "" : `Could not look up its package: ${found.error}`}`;
     return;
   }
   if (found.names.length === 0) {
-    box.textContent = `Open item: ${item.type} "${item.name}" is not in any package.`;
+    // not in a package: offer to add it, or close this note
+    const note = make("div", "", `Open item: ${item.type} "${item.name}" is not in any package.`);
+    const buttons = make("div", "tools");
+    const addButton = make("button", "primary", "Add to package…");
+    const closeButton = make("button", "", "Close");
+    addButton.type = "button";
+    closeButton.type = "button";
+    closeButton.addEventListener("click", () => {
+      box.hidden = true;
+    });
+    addButton.addEventListener("click", () => {
+      const holder = make("div");
+      box.replaceChildren(holder);
+      addToPackageFlow(holder, item, (addedTo) => {
+        if (addedTo === undefined) {
+          box.hidden = true;
+          return;
+        }
+        contents.delete(addedTo); // its contents changed
+        void applyOpenItem(_env);
+      });
+    });
+    buttons.append(addButton, closeButton);
+    box.replaceChildren(note, buttons);
     return;
   }
   const names = found.names;
