@@ -3,7 +3,11 @@
 <body style="font-family:sans-serif"><h1>Mock Aras client</h1><p>Stand-in for the Aras page: a fake <code>window.aras</code>. Press Ctrl+Shift+P.</p>
 <script>
   const packages = ["com.aras.innovator.core", "com.aras.innovator.cui", "steepgraph.IPMS.Project"];
-  const contents = { "com.aras.innovator.core": [["ItemType", "AAAA0000000000000000000000000001", "Part"], ["Method", "AAAA0000000000000000000000000002", "sg_checkForWorkHour4aDay"], ["Method", "AAAA0000000000000000000000000003", "sg_other"]] };
+  const contents = {
+    "com.aras.innovator.core": [["ItemType", "AAAA0000000000000000000000000001", "Part"], ["Method", "AAAA0000000000000000000000000002", "sg_checkForWorkHour4aDay"], ["Method", "AAAA0000000000000000000000000003", "sg_other"]],
+    "com.aras.innovator.cui": [["Life Cycle Map", "AAAA0000000000000000000000000004", "Project Template"], ["Form", "AAAA0000000000000000000000000006", "Part Form"]],
+    "steepgraph.IPMS.Project": [["Form", "AAAA0000000000000000000000000005", "Project Form"]],
+  };
   const result = (items) => ({ isError: () => items.length === 0, getErrorCode: () => "0", getErrorString: () => "No items", getItemCount: () => items.length, getItemByIndex: (i) => items[i], getRelationships: (t) => ({ getItemCount: () => 0 }) });
   function item(type) {
     const state = { props: {}, rels: [] };
@@ -31,10 +35,18 @@
     OAuthClient: { getAuthorizationHeader: () => ({ Authorization: "Bearer mock-token" }) },
     newIOMInnovator: () => ({ newItem: (type) => item(type) }),
   };
-  // one open, visible tab holding a Method, like Aras 14
-  window.arasTabs = { tabs: ["tab1"] };
-  const frame = document.createElement("iframe"); frame.id = "tab1"; frame.style.cssText = "width:300px;height:80px"; document.body.append(frame);
-  frame.contentWindow.thisItem = { getID: () => "AAAA0000000000000000000000000002", getType: () => "Method", getProperty: (k) => (k === "name" || k === "keyed_name" ? "sg_checkForWorkHour4aDay" : "") };
+  // Aras tabs: each is an iframe with its own thisItem; only the selected one is displayed
+  window.arasTabs = { tabs: [], selectedTab: "" };
+  window.__openTab = (id, type, name, itemId) => {
+    let frame = document.getElementById(id);
+    if (!frame) {
+      frame = document.createElement("iframe"); frame.id = id; frame.style.cssText = "width:300px;height:60px";
+      document.body.append(frame); window.arasTabs.tabs.push(id);
+      if (type) frame.contentWindow.thisItem = { getID: () => itemId, getType: () => type, getAttribute: () => "0", getProperty: (k) => (k === "name" || k === "keyed_name" ? name : k === "config_id" ? itemId : "") };
+    }
+    for (const t of window.arasTabs.tabs) document.getElementById(t).style.display = t === id ? "" : "none";
+    window.arasTabs.selectedTab = id;
+  };
 </script>
 <script>if (location.search.includes("nofsa")) { Object.defineProperty(window, "showDirectoryPicker", { value: undefined }); Object.defineProperty(window, "showOpenFilePicker", { value: undefined }); }</script>
 <script src="/dist/web-import-export-aras.user.js"></script>

@@ -212,6 +212,36 @@ export interface OpenItem {
   isNew: boolean;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: the page's window has no declarations.
+function openItemFromTabRecord(page: any, tabId: string): OpenItem | null {
+  const entry = page.arasTabs?.data?.get?.(tabId);
+  const id: unknown = entry?.itemId;
+  const typeId: unknown = entry?.itemTypeId;
+  if (typeof id !== "string" || id === "" || typeof typeId !== "string" || typeId === "") return null;
+  const aras = page.aras;
+  const type: unknown = aras?.getItemTypeName?.(typeId);
+  if (typeof type !== "string" || type === "") return null;
+  let configId = id;
+  let name = String(entry.label ?? "");
+  let isNew = false;
+  try {
+    // the item as saved: its config id and name; one that is not saved yet is not offered
+    const query = aras.newIOMInnovator().newItem(type, "get");
+    query.setAttribute("select", "config_id,keyed_name,name");
+    query.setID(id);
+    const result = query.apply();
+    if (result.isError()) {
+      isNew = String(result.getErrorCode?.()) === "0";
+    } else {
+      configId = String(result.getProperty("config_id") || id);
+      name = String(result.getProperty("keyed_name") || result.getProperty("name") || name);
+    }
+  } catch {
+    // the record's own values stand
+  }
+  return { type, id, name, visible: true, depth: 1, configId, isNew };
+}
+
 /**
  * The item open in the Aras tab that is on screen. Aras 14 keeps every open tab as an iframe of the main window (`aras tabs`), each
  * with its own `thisItem`; the one whose frame is displayed is the one being worked on. `null` when that tab shows no item
@@ -233,7 +263,12 @@ export function readOpenItem(): OpenItem | null {
       const item: any = (frame.contentWindow as any)?.thisItem;
       const id = item?.getID?.();
       const type = item?.getType?.();
-      if (typeof id !== "string" || id === "" || typeof type !== "string" || type === "") continue;
+      if (typeof id !== "string" || id === "" || typeof type !== "string" || type === "") {
+        // An item window with its own editor (a Form, for one) has no `thisItem`; every tab still has a record of its item.
+        const fromRecord = openItemFromTabRecord(page, String(tabId));
+        if (fromRecord !== null) return fromRecord;
+        continue;
+      }
       const name = String(item.getProperty?.("keyed_name") || item.getProperty?.("name") || "");
       const configId = String(item.getProperty?.("config_id") || id);
       const isNew = item.getAttribute?.("isNew") === "1" || item.getAttribute?.("action") === "add";

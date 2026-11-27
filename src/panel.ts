@@ -619,86 +619,105 @@ async function connect(): Promise<void> {
 }
 
 /** If an item is open in the Aras tab, preselect it in the export list and say which package holds it. */
-async function applyOpenItem(_env: Environment): Promise<void> {
+/** Whether the item is already ticked in the export tree (a package refers to an item by its config id). */
+function isItemSelected(item: OpenItem): boolean {
+  const wanted = new Set([item.id.toUpperCase(), item.configId.toUpperCase()]);
+  return [...selection.items.values()].some((element) => element.type === item.type && wanted.has(element.id.toUpperCase()));
+}
+
+/** Ticks the item in each package that holds it, keeping everything that was ticked before, and opens it in the tree. */
+async function selectOpenItem(item: OpenItem, packages: string[]): Promise<void> {
+  for (const name of packages) {
+    const elements = await loadContents(name);
+    const element =
+      elements.find((candidate) => candidate.id.toUpperCase() === item.configId.toUpperCase() || candidate.id.toUpperCase() === item.id.toUpperCase()) ??
+      elements.find((candidate) => candidate.type === item.type && candidate.name === item.name);
+    if (element === undefined) continue;
+    selection.items.set(elementKey(element), element);
+    expandedPackages.add(name);
+    expandedTypes.add(`${name}|${element.type}`);
+  }
+}
+
+let promptToken = 0;
+
+/**
+ * Asks about the item open in the selected Aras tab: add it to the export (it stays ticked with everything ticked before), or, when
+ * no package holds it, add it to a package first. Called when the drawer opens and every time another tab is selected.
+ */
+async function applyOpenItem(env: Environment): Promise<void> {
+  const token = ++promptToken;
   const item: OpenItem | undefined = readOpenItem() ?? undefined;
   const box = $("context");
-  if (item === undefined) {
+  if (item === undefined || item.isNew) {
     box.hidden = true;
+    return;
+  }
+  const close = (): void => {
+    box.hidden = true;
+  };
+  const button = (label: string, primary: boolean, onClick: () => void): HTMLButtonElement => {
+    const element = make("button", primary ? "primary" : "", label);
+    element.type = "button";
+    element.addEventListener("click", onClick);
+    return element;
+  };
+  if (isItemSelected(item)) {
+    const note = make("div", "", `${item.type} "${item.name}" is already selected for export.`);
+    const buttons = make("div", "tools");
+    buttons.append(button("Close", false, close));
+    box.replaceChildren(note, buttons);
+    box.hidden = false;
     return;
   }
   box.replaceChildren(loadingLine(`Open item: ${item.type} ${item.name}…`));
   box.hidden = false;
   const found = findPackagesOf(item.id, item.type, item.name, item.configId);
+  if (token !== promptToken) return; // another tab was selected meanwhile
   if (found === null || "error" in found) {
     box.textContent = `Open item: ${item.type} "${item.name}". ${found === null ? "" : `Could not look up its package: ${found.error}`}`;
     return;
   }
   if (found.names.length === 0) {
-    // not in a package: offer to add it, or close this note
+    // not in a package: offer to add it to one, or close this note
     const note = make("div", "", `Open item: ${item.type} "${item.name}" is not in any package.`);
     const buttons = make("div", "tools");
-    const addButton = make("button", "primary", "Add to package…");
-    const closeButton = make("button", "", "Close");
-    addButton.type = "button";
-    closeButton.type = "button";
-    closeButton.addEventListener("click", () => {
-      box.hidden = true;
-    });
-    addButton.addEventListener("click", () => {
-      const holder = make("div");
-      box.replaceChildren(holder);
-      addToPackageFlow(holder, item, (addedTo) => {
-        if (addedTo === undefined) {
-          box.hidden = true;
-          return;
-        }
-        contents.delete(addedTo); // its contents changed
-        void applyOpenItem(_env);
-      });
-    });
-    buttons.append(addButton, closeButton);
+    buttons.append(
+      button("Add to package…", true, () => {
+        const holder = make("div");
+        box.replaceChildren(holder);
+        addToPackageFlow(holder, item, (addedTo) => {
+          if (addedTo === undefined) {
+            close();
+            return;
+          }
+          contents.delete(addedTo); // its contents changed
+          void applyOpenItem(env);
+        });
+      }),
+      button("Close", false, close),
+    );
     box.replaceChildren(note, buttons);
     return;
   }
   const names = found.names;
-  const text = make("div", "", `Open item: ${item.type} "${item.name}" · in ${names.join(", ")}. Select it for export?`);
+  const text = make("div", "", `Open item: ${item.type} "${item.name}" · in ${names.join(", ")}. Add it to the export?`);
   const tools = make("div", "tools");
-  const yes = make("button", "primary", "Yes");
-  const no = make("button", "", "No");
-  yes.type = "button";
-  no.type = "button";
-  no.addEventListener("click", () => {
-    box.hidden = true;
-  });
-  yes.addEventListener("click", () => {
-    box.replaceChildren(loadingLine("Finding the item in its package…"));
-    $("export-tree").replaceChildren(loadingLine("Finding the item in its package…"));
-    void run(
-      "Selecting the item",
-      async () => {
-        selection.packages.clear();
-        selection.items.clear();
-        for (const name of names) {
-          const elements = await loadContents(name);
-          const element =
-            elements.find((candidate) => candidate.id.toUpperCase() === item.id.toUpperCase()) ??
-            elements.find((candidate) => candidate.type === item.type && candidate.name === item.name);
-          if (element === undefined) continue;
-          selection.items.set(elementKey(element), element);
-          expandedPackages.add(name);
-          expandedTypes.add(`${name}|${element.type}`);
-        }
+  tools.append(
+    button("Add to export", true, () => {
+      box.replaceChildren(loadingLine("Finding the item in its package…"));
+      void run("Selecting the item", () => selectOpenItem(item, names), { clear: false }).finally(() => {
+        box.hidden = true;
         $<HTMLInputElement>("export-filter").value = "";
         root.querySelector<HTMLButtonElement>('[data-tab="export"]')?.click();
-      },
-      { clear: false },
-    ).finally(() => {
-      box.hidden = true;
-      renderTree();
-      $("export-tree").querySelector(".node.l2")?.scrollIntoView({ block: "center" });
-    });
-  });
-  tools.append(yes, no);
+        renderTree();
+        for (const box of Array.from($("export-tree").querySelectorAll("input"))) {
+          if (box.getAttribute("aria-label") === `${item.type} ${item.name}`) box.scrollIntoView({ block: "nearest" });
+        }
+      });
+    }),
+    button("No", false, close),
+  );
   box.replaceChildren(text, tools);
 }
 
@@ -950,7 +969,15 @@ async function importSelected(signal: AbortSignal): Promise<void> {
 // ------------------------------------------------------------------------------------------------------------- wiring
 
 /** Mounts the panel's behaviour on its shadow root. Returns `refresh`, for the shortcut pressed while the panel is open. */
-export function start(shadow: ShadowRoot): { refresh(): void } {
+export interface PanelApi {
+  refresh(): void;
+  promptOpenItem(): void;
+  clearPrompt(): void;
+  isSelected(item: OpenItem): boolean;
+  selectedCount(): number;
+  addToSelection(item: OpenItem): Promise<void>;
+}
+export function start(shadow: ShadowRoot): PanelApi {
   root = shadow;
   if (!hasFolderPicker) {
     $<HTMLButtonElement>("pick-export-folder").disabled = true;
@@ -1075,6 +1102,13 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
     });
   }
   
+  const waitConnected = async (): Promise<void> => {
+    const start = Date.now();
+    while (environment === undefined) {
+      if (Date.now() - start > 20000) throw new Error("Not connected to the Aras client.");
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  };
   return {
     refresh() {
       if (currentAbort !== undefined) return;
@@ -1089,6 +1123,26 @@ export function start(shadow: ShadowRoot): { refresh(): void } {
         },
         { clear: false },
       );
+    },
+    /** Another tab was selected while the drawer is open: ask about its item. */
+    promptOpenItem() {
+      if (environment === undefined || currentAbort !== undefined) return;
+      void applyOpenItem(environment);
+    },
+    /** Another tab was selected: the note about the previous tab's item must not stay. */
+    clearPrompt() {
+      promptToken += 1;
+      $("context").hidden = true;
+    },
+    isSelected: (item: OpenItem): boolean => isItemSelected(item),
+    selectedCount: (): number => selection.items.size + selection.packages.size,
+    /** Adds an item to the export selection without the drawer being open. */
+    async addToSelection(item: OpenItem): Promise<void> {
+      await waitConnected();
+      const found = findPackagesOf(item.id, item.type, item.name, item.configId);
+      if (found === null || "error" in found) throw new Error(found === null ? "No Aras client." : found.error);
+      await selectOpenItem(item, found.names);
+      renderTree();
     },
   };
 }

@@ -2,7 +2,7 @@ import { ADD_CSS, addToPackageFlow } from "./add-to-package.js";
 import { type OpenItem, findPackagesOf, isPackagedType, readOpenItem } from "./page-bridge.js";
 import css from "./panel.css";
 import html from "./panel.html";
-import { start } from "./panel.js";
+import { type PanelApi, start } from "./panel.js";
 
 /**
  * Entry of the userscript: runs in the top window of an Aras client, puts a drawer on the right (a shadow DOM, so Aras's styles
@@ -13,12 +13,14 @@ const HOST_ID = "__web_import_export_aras";
 
 let host: HTMLElement | undefined;
 let launcher: HTMLElement | undefined;
-let panel: { refresh(): void } | undefined;
+let panel: PanelApi | undefined;
 let toast: HTMLElement | undefined;
 
-function mount(): void {
+/** Builds the drawer. `show: false` builds it hidden (to hold the export selection before anyone opens it). */
+function mount(show: boolean): void {
   host = document.createElement("div");
   host.id = HOST_ID;
+  host.style.display = show ? "block" : "none";
   document.body.append(host);
   const shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = `<style>${css}${ADD_CSS}</style>${html}`;
@@ -32,13 +34,15 @@ function mount(): void {
   for (const type of ["keydown", "keypress", "keyup"]) shadow.addEventListener(type, (event) => event.stopPropagation());
 }
 
+const isOpen = (): boolean => host !== undefined && host.style.display !== "none";
+
 function open(): void {
-  hideToast(); // the shortcut takes over from the suggestion
+  hideToast(); // the drawer takes over from the suggestion
   if (host === undefined) {
-    mount(); // starts connecting by itself
+    mount(true); // starts connecting by itself
   } else {
     host.style.display = "block";
-    panel?.refresh(); // pressed again: read the tab and the open item again
+    panel?.refresh(); // read the tab and the open item again
   }
   if (launcher !== undefined) launcher.style.display = "none";
 }
@@ -46,6 +50,18 @@ function open(): void {
 function close(): void {
   if (host !== undefined) host.style.display = "none";
   if (launcher !== undefined) launcher.style.display = "block";
+}
+
+/** Ctrl+Shift+P: closes the drawer when it is open, opens it when it is not. */
+function toggle(): void {
+  if (isOpen()) close();
+  else open();
+}
+
+/** The drawer, built hidden if it does not exist yet. */
+function ensurePanel(): PanelApi {
+  if (host === undefined) mount(false);
+  return panel as PanelApi;
 }
 
 function addLauncher(): void {
@@ -83,63 +99,106 @@ function hideToast(): void {
   if (toast !== undefined) toast.hidden = true;
 }
 
-function showSuggestion(item: OpenItem): void {
+/**
+ * The suggestion box (bottom right) for the item of the selected tab. `primary` does the work when its button is pressed: it gets the
+ * box and a function that closes it and remembers that this item was answered.
+ */
+function suggest(item: OpenItem, message: string, primaryLabel: string, primary: (box: HTMLElement, done: () => void) => void): void {
   if (toast === undefined) return;
   const box = toast;
-  const close = (): void => {
+  const done = (): void => {
     answered.add(item.id);
     box.hidden = true;
   };
   const head = document.createElement("div");
   head.className = "head";
-  const message = document.createElement("div");
-  message.className = "msg";
-  message.textContent = `${item.type} "${item.name}" is not in any package. Add it to one?`;
+  const text = document.createElement("div");
+  text.className = "msg";
+  text.textContent = message;
   const x = document.createElement("button");
   x.className = "x";
   x.type = "button";
   x.title = "Close";
   x.textContent = "✕";
-  x.addEventListener("click", close);
-  head.append(message, x);
+  x.addEventListener("click", done);
+  head.append(text, x);
   const row = document.createElement("div");
   row.className = "row";
-  const add = document.createElement("button");
-  add.className = "primary";
-  add.type = "button";
-  add.textContent = "Add to package…";
+  const yes = document.createElement("button");
+  yes.className = "primary";
+  yes.type = "button";
+  yes.textContent = primaryLabel;
+  yes.addEventListener("click", () => primary(box, done));
   const no = document.createElement("button");
   no.type = "button";
   no.textContent = "Not now";
-  no.addEventListener("click", close);
-  add.addEventListener("click", () => {
-    const holder = document.createElement("div");
-    box.replaceChildren(holder);
-    addToPackageFlow(holder, item, () => close());
-  });
-  row.append(add, no);
+  no.addEventListener("click", done);
+  row.append(yes, no);
   box.replaceChildren(head, row);
   box.hidden = false;
+}
+
+/** The item is in a package: offer to put it into the export selection (the drawer need not be open). */
+function suggestExport(item: OpenItem, packages: string[]): void {
+  suggest(item, `${item.type} "${item.name}" is in ${packages.join(", ")}. Add it to the export?`, "Add to export", (box, done) => {
+    box.replaceChildren(Object.assign(document.createElement("div"), { textContent: "Adding…" }));
+    ensurePanel()
+      .addToSelection(item)
+      .then(() => {
+        const count = panel?.selectedCount() ?? 0;
+        box.replaceChildren(
+          Object.assign(document.createElement("div"), {
+            textContent: `Added. ${count} selected for export; Ctrl+Shift+P opens the tool to export them.`,
+          }),
+        );
+        answered.add(item.id);
+        setTimeout(() => {
+          if (!box.hidden) done();
+        }, 3000);
+      })
+      .catch((error: unknown) => {
+        box.replaceChildren(Object.assign(document.createElement("div"), { textContent: `Could not add it: ${error instanceof Error ? error.message : String(error)}` }));
+        setTimeout(done, 5000);
+      });
+  });
+}
+
+/** The item is in no package: offer to add it to one. */
+function suggestPackage(item: OpenItem): void {
+  suggest(item, `${item.type} "${item.name}" is not in any package. Add it to one?`, "Add to package…", (box, done) => {
+    const holder = document.createElement("div");
+    box.replaceChildren(holder);
+    addToPackageFlow(holder, item, () => done());
+  });
 }
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 let lastTab = "";
 let checking = 0;
 
-/** A tab was selected: if it holds a saved item of a packaged type that no package has, suggest adding it. */
+/**
+ * A tab was selected. With the drawer open the drawer asks about its item; with the drawer closed a suggestion box does: add the item
+ * to the export selection when a package holds it, or add it to a package when none does.
+ */
 async function checkOpenTab(token: number): Promise<void> {
   hideToast();
+  if (isOpen()) panel?.clearPrompt();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await wait(900); // a tab's item loads a moment after the tab opens
     if (token !== checking) return;
     const item = readOpenItem();
     if (item === null) continue;
-    if (item.isNew || answered.has(item.id)) return;
-    if (host !== undefined && host.style.display !== "none") return; // the drawer is open: it has its own question
+    if (item.isNew) return;
+    if (isOpen()) {
+      panel?.promptOpenItem();
+      return;
+    }
+    if (answered.has(item.id) || panel?.isSelected(item) === true) return;
     const packages = findPackagesOf(item.id, item.type, item.name, item.configId);
-    if (packages === null || "error" in packages || packages.names.length > 0) return;
-    if (isPackagedType(item.type) !== true) return;
-    if (token === checking) showSuggestion(item);
+    if (packages === null || "error" in packages) return;
+    if (token !== checking) return;
+    if (packages.names.length > 0) suggestExport(item, packages.names);
+    else if (isPackagedType(item.type) === true) suggestPackage(item);
     return;
   }
 }
@@ -161,7 +220,7 @@ function onKey(event: KeyboardEvent): void {
   if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey && event.code === "KeyP") {
     event.preventDefault();
     event.stopPropagation();
-    open();
+    toggle();
   }
 }
 
