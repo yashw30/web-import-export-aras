@@ -48,7 +48,8 @@
         </div>
         <label class="inline"><input type="checkbox" id="export-referenced" /> Also export the items these refer to</label>
 
-        <div class="row">
+        <div class="row exportrow">
+          <input id="export-name" type="text" placeholder="Export name (optional)" title="The name of the zip or folder. Left empty it is export-database-time." autocomplete="off" />
           <button id="export-run" type="button" class="primary">Export selected</button>
           <button type="button" class="abort-btn" disabled>Abort</button>
         </div>

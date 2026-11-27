@@ -89,3 +89,7 @@ progress[hidden] { display: block; visibility: hidden; }
 .tree .twrap:not(.top)::after { content: ""; position: absolute; left: 0; top: 12px; width: 14px; border-top: 1px dotted var(--line); }
 
 .tree .node > .spacer { flex: none; width: 20px; }
+
+.exportrow { flex-wrap: nowrap; }
+.exportrow #export-name { flex: 1; min-width: 0; }
+.exportrow button { flex: none; }

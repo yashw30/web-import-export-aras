@@ -763,8 +763,31 @@ async function chooseExportFolder(): Promise<FsaDirectoryHandle> {
   return handle;
 }
 
+/** The name the person typed for the export, made safe for a file or folder name; empty when none was typed. */
+function exportName(): string {
+  return $<HTMLInputElement>("export-name")
+    .value.trim()
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+    .replace(/^\.+/, "")
+    .replace(/[. ]+$/, "");
+}
+
+/** A folder named `base` inside `parent`, made new: when `base` exists the name gets -2, -3, ... so nothing is overwritten. */
+async function newFolder(parent: FsaDirectoryHandle, base: string): Promise<FsaDirectoryHandle> {
+  for (let attempt = 1; attempt < 1000; attempt += 1) {
+    const name = attempt === 1 ? base : `${base}-${attempt}`;
+    try {
+      await parent.getDirectoryHandle(name);
+    } catch {
+      return parent.getDirectoryHandle(name, { create: true });
+    }
+  }
+  throw new Error(`Could not find a free folder name for ${base}.`);
+}
+
 async function exportRun(signal: AbortSignal, everything: boolean): Promise<void> {
   const env = needEnvironment();
+  const base = exportName() || `export-${env.database}-${stamp()}`;
   // "A folder" is the one chosen before (the picker opens in Downloads the first time); or a zip download.
   // Downloads (one zip, which keeps the folder layout) unless a folder was chosen with Change.
   const mode = exportDir === undefined || !hasFolderPicker ? "zip" : "folder";
@@ -803,12 +826,12 @@ async function exportRun(signal: AbortSignal, everything: boolean): Promise<void
       const mount: Record<string, Uint8Array> = {};
       for (const [path, bytes] of result.files) mount[`/${path}`] = bytes;
       tree.mount(mount);
-      const destination = await target.getDirectoryHandle(`export-${env.database}-${stamp()}`, { create: true });
+      const destination = await newFolder(target, base);
       const written = await commitToDirectory(tree, destination, { signal });
       log(`Wrote ${written.files} files into ${target.name}/${destination.name}.`);
     } else if (result.zip !== undefined) {
-      downloadBytes(`export-${env.database}-${stamp()}.zip`, result.zip, "application/zip");
-      log(`Exported ${result.files.size} files; saved as a zip download.`);
+      downloadBytes(`${base}.zip`, result.zip, "application/zip");
+      log(`Exported ${result.files.size} files; saved as ${base}.zip.`);
     } else {
       log("The export produced no files.");
     }
