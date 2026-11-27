@@ -557,6 +557,8 @@ function renderTree(): void {
       for (const element of list.slice(0, LIMIT)) {
         const itemRow = make("div", "node");
         itemRow.append(
+          // the room a toggle takes on a type row, so the item's box sits one level in from its type's box
+          make("span", "spacer"),
           checkbox(selection.items.has(elementKey(element)), false, (on) => {
             if (on) selection.items.set(elementKey(element), element);
             else selection.items.delete(elementKey(element));
