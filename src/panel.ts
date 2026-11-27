@@ -480,6 +480,7 @@ function renderTree(): void {
     if (!nameMatches && !itemMatches) continue;
     shown += 1;
 
+    const packageWrap = make("div", "twrap top");
     const row = make("div", "node");
     const open = expandedPackages.has(name) || (itemMatches && !nameMatches);
     row.append(
@@ -506,11 +507,19 @@ function renderTree(): void {
       }, `Export package ${name}`),
       make("span", "", name),
     );
-    tree.append(row);
+    packageWrap.append(row);
+    tree.append(packageWrap);
     if (!open) continue;
 
+    const typeBox = make("div", "tchildren");
+    packageWrap.append(typeBox);
+    const leaf = (node: HTMLElement): HTMLElement => {
+      const wrap = make("div", "twrap");
+      wrap.append(node);
+      return wrap;
+    };
     if (elements === undefined) {
-      tree.append(loading.has(name) ? loadingLine("Loading contents…") : make("div", "loading", "Contents not loaded."));
+      typeBox.append(leaf(loading.has(name) ? loadingLine("Loading contents…") : make("div", "loading", "Contents not loaded.")));
       continue;
     }
     const matching = needle === "" || scope === "packages" ? elements : filterElements(elements, filter);
@@ -518,7 +527,8 @@ function renderTree(): void {
     for (const [type, list] of groupByType(listed)) {
       const typeKey = `${name}|${type}`;
       const selectedCount = list.filter((element) => selection.items.has(elementKey(element))).length;
-      const typeRow = make("div", "node l1");
+      const typeWrap = make("div", "twrap");
+      const typeRow = make("div", "node");
       const typeOpen = expandedTypes.has(typeKey) || (needle !== "" && !nameMatches);
       typeRow.append(
         toggleButton(typeOpen, () => {
@@ -537,12 +547,15 @@ function renderTree(): void {
         make("span", "", type),
         make("span", "count", `(${list.length})`),
       );
-      tree.append(typeRow);
+      typeWrap.append(typeRow);
+      typeBox.append(typeWrap);
       if (!typeOpen) continue;
+      const itemBox = make("div", "tchildren");
+      typeWrap.append(itemBox);
       const LIMIT = 200;
-      if (list.length > LIMIT) tree.append(make("div", "loading", `Showing the first ${LIMIT} of ${list.length}; narrow it with the filter (the type's box still ticks all ${list.length}).`));
+      if (list.length > LIMIT) itemBox.append(leaf(make("div", "loading", `Showing the first ${LIMIT} of ${list.length}; narrow it with the filter (the type's box still ticks all ${list.length}).`)));
       for (const element of list.slice(0, LIMIT)) {
-        const itemRow = make("div", "node l2");
+        const itemRow = make("div", "node");
         itemRow.append(
           checkbox(selection.items.has(elementKey(element)), false, (on) => {
             if (on) selection.items.set(elementKey(element), element);
@@ -552,7 +565,7 @@ function renderTree(): void {
           }, `${type} ${element.name}`),
           make("span", "", element.name),
         );
-        tree.append(itemRow);
+        itemBox.append(leaf(itemRow));
       }
     }
   }
@@ -565,7 +578,7 @@ function renderTree(): void {
 async function readPackageList(env: Environment): Promise<void> {
   $("export-tree").replaceChildren(loadingLine("Loading packages…"));
   // let the browser paint the message before the (possibly long) read starts
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => setTimeout(resolve, 30)); // not requestAnimationFrame: a hidden tab never runs it
   const answer = listPackages();
   if (answer === null) throw new Error("No frame of the tab could list the packages.");
   if ("error" in answer) throw new Error(`Listing the packages failed: ${answer.error}`);
