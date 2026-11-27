@@ -1151,8 +1151,13 @@ export function start(shadow: ShadowRoot): PanelApi {
     },
     /** Another tab was selected while the drawer is open: ask about its item. */
     promptOpenItem() {
-      if (environment === undefined || currentAbort !== undefined) return;
-      void applyOpenItem(environment);
+      // a run in progress (the connect right after the drawer opened, an export) finishes first; the question is then still asked
+      void (async () => {
+        for (let waited = 0; (environment === undefined || currentAbort !== undefined) && waited < 60; waited += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        if (environment !== undefined && currentAbort === undefined) await applyOpenItem(environment);
+      })();
     },
     /** Another tab was selected: the note about the previous tab's item must not stay. */
     clearPrompt() {

@@ -455,3 +455,38 @@ export function addItemToPackage(
     return { error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/**
+ * Whether the selected Aras tab has finished opening: its document and every frame inside it report `complete`, and nothing in it is
+ * showing an endless animation (Aras's loading spinner; the short fade-ins of a loaded page are not it). A tab that is still loading
+ * is greyed out and its item may be half there.
+ */
+export function isSelectedTabLoaded(): boolean {
+  // biome-ignore lint/suspicious/noExplicitAny: the page's window has no declarations.
+  const page: any = window;
+  const selected: unknown = page.arasTabs?.selectedTab;
+  if (typeof selected !== "string" || selected === "") return false;
+  const frame = document.getElementById(selected) as HTMLIFrameElement | null;
+  if (frame?.contentWindow === null || frame === null) return false;
+  const settled = (win: Window, depth: number): boolean => {
+    try {
+      const doc = win.document;
+      if (doc.readyState !== "complete") return false;
+      for (const animation of doc.getAnimations()) {
+        const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+        if (animation.playState === "running" && animation.effect?.getComputedTiming().iterations === Number.POSITIVE_INFINITY && target !== null && target.getClientRects().length > 0) {
+          return false;
+        }
+      }
+      if (depth >= 3) return true;
+      for (const inner of Array.from(doc.querySelectorAll("iframe, frame"))) {
+        const innerWindow = (inner as HTMLIFrameElement).contentWindow;
+        if (innerWindow !== null && !settled(innerWindow, depth + 1)) return false;
+      }
+      return true;
+    } catch {
+      return true; // a frame that cannot be read cannot be waited for
+    }
+  };
+  return settled(frame.contentWindow as Window, 0);
+}

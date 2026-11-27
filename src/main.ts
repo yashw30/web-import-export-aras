@@ -1,5 +1,5 @@
 import { ADD_CSS, addToPackageFlow } from "./add-to-package.js";
-import { type OpenItem, findPackagesOf, isPackagedType, readOpenItem } from "./page-bridge.js";
+import { type OpenItem, findPackagesOf, isPackagedType, isSelectedTabLoaded, readOpenItem } from "./page-bridge.js";
 import css from "./panel.css";
 import html from "./panel.html";
 import { type PanelApi, start } from "./panel.js";
@@ -183,24 +183,28 @@ let checking = 0;
 async function checkOpenTab(token: number): Promise<void> {
   hideToast();
   if (isOpen()) panel?.clearPrompt();
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await wait(900); // a tab's item loads a moment after the tab opens
+  // Wait until the tab has finished opening (its item present and the page, with everything in it, loaded) and stayed so for a moment.
+  let steady = 0;
+  const deadline = Date.now() + 30000;
+  let item: OpenItem | null = null;
+  while (Date.now() < deadline) {
+    await wait(300);
     if (token !== checking) return;
-    const item = readOpenItem();
-    if (item === null) continue;
-    if (item.isNew) return;
-    if (isOpen()) {
-      panel?.promptOpenItem();
-      return;
-    }
-    if (answered.has(item.id) || panel?.isSelected(item) === true) return;
-    const packages = findPackagesOf(item.id, item.type, item.name, item.configId);
-    if (packages === null || "error" in packages) return;
-    if (token !== checking) return;
-    if (packages.names.length > 0) suggestExport(item, packages.names);
-    else if (isPackagedType(item.type) === true) suggestPackage(item);
+    item = readOpenItem();
+    steady = item !== null && isSelectedTabLoaded() ? steady + 1 : 0;
+    if (steady >= 3) break;
+  }
+  if (token !== checking || item === null || steady < 3) return;
+  if (item.isNew) return;
+  if (isOpen()) {
+    panel?.promptOpenItem();
     return;
   }
+  if (answered.has(item.id) || panel?.isSelected(item) === true) return;
+  const packages = findPackagesOf(item.id, item.type, item.name, item.configId);
+  if (packages === null || "error" in packages) return;
+  if (packages.names.length > 0) suggestExport(item, packages.names);
+  else if (isPackagedType(item.type) === true) suggestPackage(item);
 }
 
 function watchTabs(): void {
