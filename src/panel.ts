@@ -998,9 +998,6 @@ export interface PanelApi {
   refresh(): void;
   promptOpenItem(): void;
   clearPrompt(): void;
-  isSelected(item: OpenItem): boolean;
-  selectedCount(): number;
-  addToSelection(item: OpenItem): Promise<void>;
 }
 export function start(shadow: ShadowRoot): PanelApi {
   root = shadow;
@@ -1127,13 +1124,6 @@ export function start(shadow: ShadowRoot): PanelApi {
     });
   }
   
-  const waitConnected = async (): Promise<void> => {
-    const start = Date.now();
-    while (environment === undefined) {
-      if (Date.now() - start > 20000) throw new Error("Not connected to the Aras client.");
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  };
   return {
     refresh() {
       if (currentAbort !== undefined) return;
@@ -1163,16 +1153,6 @@ export function start(shadow: ShadowRoot): PanelApi {
     clearPrompt() {
       promptToken += 1;
       $("context").hidden = true;
-    },
-    isSelected: (item: OpenItem): boolean => isItemSelected(item),
-    selectedCount: (): number => selection.items.size + selection.packages.size,
-    /** Adds an item to the export selection without the drawer being open. */
-    async addToSelection(item: OpenItem): Promise<void> {
-      await waitConnected();
-      const found = findPackagesOf(item.id, item.type, item.name, item.configId);
-      if (found === null || "error" in found) throw new Error(found === null ? "No Aras client." : found.error);
-      await selectOpenItem(item, found.names);
-      renderTree();
     },
   };
 }
