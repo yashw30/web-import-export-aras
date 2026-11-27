@@ -1,8 +1,20 @@
 // Bundles the panel and the engine's Worker into one userscript: dist/web-import-export-aras.user.js
+import { execSync } from "node:child_process";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import * as esbuild from "esbuild";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+
+// The commit this build was made at (and whether there were uncommitted changes). The GitHub loader overrides it with the commit
+// it actually fetched, which is the one that matters; this is what a local build shows.
+const git = (command) => {
+  try {
+    return execSync(`git ${command}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+};
+const build = { commit: git("rev-parse --short HEAD") || "unknown", dirty: git("status --porcelain") !== "", time: new Date().toISOString() };
 
 // The engine's Worker source, embedded as a string and started from a Blob at run time.
 const workerSource = {
@@ -29,7 +41,7 @@ const result = await esbuild.build({
   target: "es2020",
   minify: true,
   legalComments: "none",
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: { "process.env.NODE_ENV": '"production"', __BUILD__: JSON.stringify(build) },
   loader: { ".html": "text", ".css": "text" },
   plugins: [workerSource],
 });

@@ -24,6 +24,14 @@ function mount(show: boolean): void {
   const shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = `<style>${css}${ADD_CSS}</style>${html}`;
   panel = start(shadow);
+  // which build is running: the commit the GitHub loader fetched, else the commit this build was made at
+  const footer = shadow.getElementById("build");
+  if (footer !== null) {
+    const fromLoader = window.__wieaBuild?.commit;
+    const commit = fromLoader ?? `${__BUILD__.commit}${__BUILD__.dirty ? "+" : ""}`;
+    footer.textContent = `Version ${commit}${fromLoader === undefined ? " (local build)" : ""}`;
+    footer.title = `Commit ${commit}. Built ${__BUILD__.time}.${fromLoader === undefined ? "" : " Loaded from GitHub (latest)."}`;
+  }
   shadow.getElementById("close")?.addEventListener("click", close);
   shadow.addEventListener("keydown", (event) => {
     if ((event as KeyboardEvent).key === "Escape") close();

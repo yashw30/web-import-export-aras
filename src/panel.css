@@ -93,3 +93,5 @@ progress[hidden] { display: block; visibility: hidden; }
 .exportrow { flex-wrap: nowrap; }
 .exportrow #export-name { flex: 1; min-width: 0; }
 .exportrow button { flex: none; }
+
+.build { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
